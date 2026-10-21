@@ -1,0 +1,17 @@
+# Variables de entorno — QUIPU
+# Copia como `.dev.vars` para desarrollo local. NO subas `.dev.vars` al repositorio.
+# En producción usa: npx wrangler pages secret put NOMBRE --project-name quipu-ats
+
+# --- Opcionales: todas tienen degradación segura si faltan ---
+
+# Extracción de CV asistida por IA. Si falta, se usa extracción heurística local
+# y la respuesta lo indica explícitamente (provider: "heuristico").
+OPENAI_API_KEY=
+
+# Envío real de correo transaccional (Resend).
+# SIN esta clave los mensajes quedan registrados con status="failed" y provider_error
+# explicando que no hay proveedor configurado. NUNCA se muestran como enviados.
+RESEND_API_KEY=
+
+# --- Requeridos por la plataforma (los inyecta Cloudflare) ---
+# DB  → binding D1 definido en wrangler.jsonc

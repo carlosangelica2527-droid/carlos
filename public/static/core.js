@@ -263,9 +263,99 @@
     }
   }
 
-  /* ---------------- login ---------------- */
-  function renderLogin() {
+  /* ---------------- login / arranque ---------------- */
+  function renderLogin(setupState) {
     const root = document.getElementById('root')
+    const needsSetup = setupState && setupState.needs_setup
+
+    if (needsSetup) {
+      root.innerHTML = `
+      <div class="login-wrap">
+        <section class="login-aside">
+          <div>
+            <div class="login-brand"><div class="knot" aria-hidden="true"></div>QUIPU · ATS</div>
+            <h1>Tu memoria de talento empieza aquí.</h1>
+            <p>La base de datos está lista pero aún no tiene una organización. Elige cómo empezar.</p>
+            <ul class="login-points">
+              <li><span class="dot"></span><span><b>Datos de demostración.</b> Carga una organización ficticia con vacantes, candidatos y pruebas para recorrer el flujo completo.</span></li>
+              <li><span class="dot"></span><span><b>Empezar de cero.</b> Crea tu organización real y el primer usuario administrador.</span></li>
+            </ul>
+          </div>
+          <p class="tiny" style="color:#7fa8a1">Inicialización segura · solo disponible en una base vacía</p>
+        </section>
+        <section class="login-main">
+          <div class="login-card">
+            <h2>Preparar QUIPU</h2>
+            <p class="sub">Solo se puede hacer una vez, sobre una base sin datos.</p>
+
+            <div class="notice n-demo" style="margin-bottom:14px">
+              <span>◆</span>
+              <div><b>Opción 1 · Demostración</b><br>
+              <span class="tiny">Carga 14 perfiles ficticios, 3 vacantes, pruebas y entrevistas.</span></div>
+            </div>
+            <button class="btn btn-block" id="loadDemo">Cargar datos de demostración</button>
+
+            <div class="sep"></div>
+
+            <div class="notice n-info" style="margin-bottom:12px">
+              <span>ℹ</span>
+              <div><b>Opción 2 · Organización real</b><br>
+              <span class="tiny">Creas la organización y tu usuario administrador.</span></div>
+            </div>
+            <form id="bootform" novalidate>
+              <div class="field"><label for="borg">Nombre de la organización</label><input id="borg" required placeholder="Mi Empresa S.A."></div>
+              <div class="field"><label for="bname">Tu nombre</label><input id="bname" required placeholder="Nombre y apellido"></div>
+              <div class="field"><label for="bemail">Correo</label><input id="bemail" type="email" required></div>
+              <div class="field"><label for="bpass">Contraseña (mín. 8 caracteres)</label><input id="bpass" type="password" required></div>
+              <button class="btn btn-ghost btn-block" type="submit">Crear organización</button>
+            </form>
+            <div id="bootmsg" style="margin-top:12px"></div>
+            <div class="login-foot">Después del arranque podrás iniciar sesión normalmente.</div>
+          </div>
+        </section>
+      </div>`
+
+      document.getElementById('loadDemo').onclick = async (e) => {
+        const btn = e.target
+        if (!(await Q.confirm('Cargar datos de demostración', 'Se crearán perfiles, vacantes y pruebas ficticias. Esta acción no se puede repetir en esta base.', 'Cargar datos'))) return
+        btn.disabled = true; btn.textContent = 'Cargando…'
+        try {
+          await Q.api('/setup/demo', { method: 'POST' })
+          Q.toast('Datos de demostración cargados', 'ok')
+          renderLogin({ needs_setup: false })
+        } catch (err) {
+          document.getElementById('bootmsg').innerHTML = `<div class="notice n-err"><span>⚠</span><div>${H.esc(err.message)}</div></div>`
+          btn.disabled = false; btn.textContent = 'Cargar datos de demostración'
+        }
+      }
+
+      document.getElementById('bootform').onsubmit = async (e) => {
+        e.preventDefault()
+        const msg = document.getElementById('bootmsg')
+        msg.innerHTML = ''
+        const body = {
+          org_name: document.getElementById('borg').value.trim(),
+          admin_name: document.getElementById('bname').value.trim(),
+          admin_email: document.getElementById('bemail').value.trim(),
+          password: document.getElementById('bpass').value
+        }
+        if (!body.org_name || !body.admin_name || !body.admin_email) {
+          msg.innerHTML = '<div class="notice n-err"><span>⚠</span><div>Todos los campos son obligatorios.</div></div>'; return
+        }
+        if (body.password.length < 8) {
+          msg.innerHTML = '<div class="notice n-err"><span>⚠</span><div>La contraseña debe tener al menos 8 caracteres.</div></div>'; return
+        }
+        try {
+          await Q.api('/setup/bootstrap', { method: 'POST', body })
+          Q.toast('Organización creada. Inicia sesión.', 'ok')
+          renderLogin({ needs_setup: false })
+        } catch (err) {
+          msg.innerHTML = `<div class="notice n-err"><span>⚠</span><div>${H.esc(err.message)}</div></div>`
+        }
+      }
+      return
+    }
+
     root.innerHTML = `
     <div class="login-wrap">
       <section class="login-aside">
@@ -339,7 +429,11 @@
   }
 
   Q.start = async function () {
+    let setup = null
+    try { setup = await Q.api('/setup/status') } catch (e) { setup = null }
+    if (setup && setup.needs_setup) return renderLogin(setup)
     await Q.bootstrapOrg()
+    if (!Q.state.user) return renderLogin(setup)
     Q.render()
   }
 
