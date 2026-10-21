@@ -237,7 +237,7 @@
             </div>
             <div class="sep"></div>
             <h3 style="margin-bottom:8px">Documentos</h3>
-            ${c.documents.length ? c.documents.map((d) => `<div class="row small" style="padding:5px 0"><span>📄 ${esc(d.filename)}</span><span class="spacer"></span><button class="btn-flat tiny" data-doc="${d.id}">Ver</button></div>`).join('') : '<p class="small muted">Sin documentos.</p>'}
+            ${c.documents.length ? c.documents.map((d) => `<div class="row small" style="padding:5px 0"><span>📄 ${esc(d.filename)}</span><span class="spacer"></span><a class="btn-flat tiny" href="/api/candidates/${c.id}/documents/${d.id}?raw=1" target="_blank" rel="noopener">Archivo</a><button class="btn-flat tiny" data-doc="${d.id}">Ver texto</button></div>`).join('') : '<p class="small muted">Sin documentos.</p>'}
             <button class="btn btn-ghost btn-sm btn-block" id="addcv" style="margin-top:8px">Subir CV / extraer datos</button>
           </section>
           <section class="card card-pad">
@@ -281,7 +281,12 @@
         b.onclick = async () => {
           try {
             const d = await api('/candidates/' + id + '/documents/' + b.dataset.doc)
-            Q.modal({ title: d.filename, wide: true, body: `<pre style="white-space:pre-wrap;font-size:12px;font-family:inherit">${esc(d.text)}</pre>` })
+            const empty = !d.text || !String(d.text).trim()
+            Q.modal({
+              title: d.filename,
+              wide: true,
+              body: `${d.has_file ? `<p class="small" style="margin-bottom:10px"><a class="btn btn-ghost btn-sm" href="/api/candidates/${id}/documents/${b.dataset.doc}?raw=1" target="_blank" rel="noopener">Abrir archivo original</a></p>` : ''}${empty ? '<div class="notice n-warn"><span>&#9888;</span><div>No se pudo extraer texto de este archivo (puede ser un PDF escaneado). Abre el original para revisarlo.</div></div>' : `<pre style="white-space:pre-wrap;font-size:12px;font-family:inherit">${esc(d.text)}</pre>`}`
+            })
           } catch (e) { Q.toast(e.message, 'err') }
         }
       })
@@ -859,10 +864,31 @@
       footer: `<button class="btn btn-ghost" id="mcancel">Cancelar</button><button class="btn" id="msubmit" disabled>Registrar respuestas</button>`,
       onMount: () => {
         let current = null
+        let workbookPayload = null
         document.getElementById('loadq').onclick = async () => {
           const id2 = Number(document.getElementById('asel').value)
           try {
             current = await api('/assessments/' + id2)
+            if (current.type === 'spreadsheet') {
+              document.getElementById('qbox').innerHTML = `
+                <div class="notice n-info" style="margin-bottom:10px"><span>ℹ</span><div>Esta prueba verifica un archivo <b>.xlsx</b>. Adjunta el libro resuelto y el sistema comprobará fórmulas y valores contra la rúbrica. La decisión final sigue siendo humana.</div></div>
+                <div class="field"><label for="xlsxfile">Archivo .xlsx resuelto</label><input type="file" id="xlsxfile" accept=".xlsx"></div>
+                <div id="xlstate" class="tiny muted"></div>
+                ${current.questions.map((q) => `<div class="crit"><div class="crit-head"><b class="small">${esc(q.prompt)}</b><span class="badge b-gray">${q.points} pts</span></div>${q.rubric ? `<div class="crit-ev">Criterio: <code class="tiny">${esc(q.rubric)}</code></div>` : ''}</div>`).join('')}`
+              document.getElementById('xlsxfile').onchange = async (ev) => {
+                const f = ev.target.files[0]
+                if (!f) return
+                const st = document.getElementById('xlstate')
+                st.textContent = 'Leyendo ' + f.name + '…'
+                try { workbookPayload = await Q.readWorkbook(f) }
+                catch (e) { workbookPayload = null; st.textContent = 'No se pudo leer: ' + e.message; return }
+                const sheets = Object.keys(workbookPayload)
+                const cells = sheets.reduce((n, s) => n + Object.keys(workbookPayload[s].cells || {}).length, 0)
+                st.innerHTML = `✓ <b>${esc(f.name)}</b> · ${sheets.length} hoja(s) (${esc(sheets.join(', '))}) · ${cells} celdas leídas.`
+                document.getElementById('msubmit').disabled = false
+              }
+              return
+            }
             document.getElementById('qbox').innerHTML = current.questions.map((q) => `
               <div class="crit"><div class="crit-head"><b class="small">${esc(q.prompt)}</b><span class="badge b-gray">${q.points} pts</span></div>
                 ${q.options.length ? q.options.map((o, oi) => `<label class="small" style="display:flex;gap:7px;margin:5px 0 0;font-weight:400"><input type="radio" name="q${q.id}" value="${oi}"> ${esc(o)}</label>`).join('') : `<textarea data-open="${q.id}" rows="3" placeholder="Respuesta del candidato" style="margin-top:6px"></textarea>`}
@@ -871,6 +897,18 @@
           } catch (e) { Q.toast(e.message, 'err') }
         }
         document.getElementById('msubmit').onclick = async () => {
+          if (!current) return
+          if (current.type === 'spreadsheet') {
+            if (!workbookPayload) { Q.toast('Adjunta el archivo .xlsx', 'err'); return }
+            try {
+              const r = await api('/assessments/' + current.id + '/attempts', {
+                method: 'POST', body: { candidate_id: a.candidate_id, application_id: Number(appId), workbook: workbookPayload }
+              })
+              Q.toast(`Verificado: ${Math.round(r.auto_score * 100) / 100}/${r.max_score} · ${r.status === 'graded' ? 'calificado' : 'requiere revisión'}`, 'ok')
+              document.getElementById('mback').remove(); Q.render()
+            } catch (e) { Q.toast(e.message, 'err') }
+            return
+          }
           const answers = {}
           current.questions.forEach((q) => {
             if (q.options.length) {

@@ -5,7 +5,32 @@ import { hashPassword } from './auth'
 let schemaReady = false
 
 /**
- * Inicializa el esquema en la base D1 si aún no existe.
+ * Columnas añadidas después del esquema inicial.
+ * Se aplican con ALTER TABLE solo si faltan, así una base ya creada
+ * (por ejemplo en producción) se actualiza sin CLI ni migraciones manuales.
+ */
+const COLUMN_UPGRADES: { table: string; column: string; ddl: string }[] = [
+  { table: 'documents', column: 'r2_key', ddl: 'ALTER TABLE documents ADD COLUMN r2_key TEXT' },
+  { table: 'documents', column: 'parse_note', ddl: 'ALTER TABLE documents ADD COLUMN parse_note TEXT' },
+  { table: 'assessments', column: 'workbook_ref', ddl: 'ALTER TABLE assessments ADD COLUMN workbook_ref TEXT' }
+]
+
+async function applyColumnUpgrades(env: Env): Promise<void> {
+  for (const up of COLUMN_UPGRADES) {
+    try {
+      const info = await env.DB.prepare(`PRAGMA table_info(${up.table})`).all<any>()
+      const cols = (info.results || []).map((r: any) => String(r.name))
+      if (!cols.length) continue
+      if (!cols.includes(up.column)) await env.DB.prepare(up.ddl).run()
+    } catch (e) {
+      /* Si la tabla aún no existe, el esquema base la creará con la columna. */
+    }
+  }
+}
+
+/**
+ * Inicializa el esquema en la base D1 si aún no existe y aplica
+ * las columnas nuevas sobre bases ya existentes.
  * Es idempotente y se ejecuta una sola vez por isolate.
  * Motivo: el despliegue no debe depender de permisos de CLI sobre D1.
  */
@@ -17,6 +42,7 @@ export async function ensureSchema(env: Env): Promise<void> {
   if (!row) {
     await env.DB.batch(SCHEMA_STATEMENTS.map((sql) => env.DB.prepare(sql)))
   }
+  await applyColumnUpgrades(env)
   schemaReady = true
 }
 

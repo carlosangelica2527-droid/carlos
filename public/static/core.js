@@ -148,6 +148,38 @@
     return `<div class="notice n-err"><span>⚠</span><div><b>No se pudo completar la acción.</b><br>${H.esc(err && err.message ? err.message : String(err))}</div></div>`
   }
 
+  /* Lee un .xlsx en el navegador y devuelve { hoja: { cells: { A1: {v, f} } } }.
+     Solo extrae hechos del libro; la calificación la hace el servidor y la decide una persona. */
+  Q.readWorkbook = async function (file) {
+    if (!window.XLSX) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+        s.onload = resolve
+        s.onerror = () => reject(new Error('No se pudo cargar el lector de Excel'))
+        document.head.appendChild(s)
+      })
+    }
+    const buf = await file.arrayBuffer()
+    const wb = window.XLSX.read(buf, { type: 'array', cellFormula: true, cellNF: false })
+    const out = {}
+    wb.SheetNames.forEach((name) => {
+      const sheet = wb.Sheets[name]
+      const cells = {}
+      Object.keys(sheet || {}).forEach((ref) => {
+        if (ref[0] === '!') return
+        const c = sheet[ref]
+        const cell = {}
+        if (c.f) cell.f = c.f
+        if (c.v !== undefined && c.v !== null) cell.v = c.v
+        if (Object.keys(cell).length) cells[ref.toUpperCase()] = cell
+      })
+      out[name] = { cells }
+    })
+    if (!Object.keys(out).length) throw new Error('El archivo no contiene hojas legibles')
+    return out
+  }
+
   /* ---------------- navegación ---------------- */
   Q.nav = function (hash) {
     if (location.hash === hash) Q.render()
@@ -186,8 +218,7 @@
       <div class="shell">
         <aside class="side" id="sidebar">
           <div class="side-brand">
-            <div class="knot" aria-hidden="true"></div>
-            <div><b>QUIPU</b><small>Memoria de talento</small></div>
+            <img src="/static/logo-light.png" alt="QUIPU" class="side-logo">
           </div>
           ${nav}
           <div class="side-foot">
@@ -273,7 +304,7 @@
       <div class="login-wrap">
         <section class="login-aside">
           <div>
-            <div class="login-brand"><div class="knot" aria-hidden="true"></div>QUIPU · ATS</div>
+            <div class="login-brand"><img src="/static/logo-light.png" alt="QUIPU" class="login-logo"></div>
             <h1>Tu memoria de talento empieza aquí.</h1>
             <p>La base de datos está lista pero aún no tiene una organización. Elige cómo empezar.</p>
             <ul class="login-points">
@@ -360,7 +391,7 @@
     <div class="login-wrap">
       <section class="login-aside">
         <div>
-          <div class="login-brand"><div class="knot" aria-hidden="true"></div>QUIPU · ATS</div>
+          <div class="login-brand"><img src="/static/logo-light.png" alt="QUIPU" class="login-logo"></div>
           <h1>No pierdas a un buen candidato.</h1>
           <p>Recupera el talento que ya conoces, evalúa lo que sabe hacer y decide con evidencia.</p>
           <ul class="login-points">

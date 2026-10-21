@@ -10,6 +10,7 @@ import applicationRoutes from './routes/applications'
 import intelligenceRoutes from './routes/intelligence'
 import assessmentRoutes from './routes/assessments'
 import reportRoutes from './routes/reports'
+import publicApplyRoutes from './routes/public'
 import { publicJobsPage, publicJobPage, appShell } from './pages'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -91,6 +92,7 @@ app.post('/api/setup/bootstrap', async (c) => {
 })
 
 app.route('/api', publicRouter)
+app.route('/api', publicApplyRoutes)
 app.route('/api', authRoutes)
 app.route('/api', jobRoutes)
 app.route('/api', candidateRoutes)

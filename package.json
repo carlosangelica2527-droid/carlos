@@ -13,7 +13,7 @@
     "db:seed:local": "node scripts/seed.mjs --out seed.generated.sql && wrangler d1 execute quipu-db --local --file=./seed.generated.sql",
     "db:seed:prod": "node scripts/seed.mjs --out seed.generated.sql && wrangler d1 execute quipu-db --remote --file=./seed.generated.sql",
     "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local && npm run db:seed:local",
-    "test": "node --test tests/",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {

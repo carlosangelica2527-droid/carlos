@@ -70,8 +70,8 @@ input[type=checkbox]{width:auto}
 .shell{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
 .side{background:#0d1b2a;color:#c8d6e0;padding:18px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;overflow-y:auto}
 .side-brand{display:flex;align-items:center;gap:10px;padding:6px 8px 20px;color:#fff}
-.side-brand b{font-size:13px;letter-spacing:.2em;text-transform:uppercase}
-.side-brand small{display:block;font-size:10px;letter-spacing:.1em;color:#7f9bb0;text-transform:uppercase;font-weight:500}
+.side-logo{width:100%;max-width:150px;height:auto;display:block}
+.login-logo{width:100%;max-width:260px;height:auto;display:block}
 .nav-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#5f7a90;padding:14px 8px 6px;font-weight:600}
 .nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;color:#c8d6e0;font-size:13px;font-weight:500;cursor:pointer;border:0;background:transparent;width:100%;text-align:left}
 .nav-item:hover{background:#1a2c3d;color:#fff;text-decoration:none}
@@ -231,3 +231,16 @@ tbody tr:last-child td{border-bottom:0}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 @media print{.side,.topbar-actions{display:none}}
+
+/* ---------- Impresión / exportación a PDF desde el navegador ---------- */
+@media print{
+  .side,.topbar,.topbar-actions,.btn,.btn-flat,.tab,.nav-item{display:none!important}
+  body{background:#fff;font-size:11pt}
+  .shell{display:block}
+  .main{width:100%}
+  .content{padding:0}
+  .card{break-inside:avoid;box-shadow:none;border:1px solid #ccc}
+  .kpi{break-inside:avoid}
+  a[href]::after{content:''}
+  .no-print{display:none!important}
+}

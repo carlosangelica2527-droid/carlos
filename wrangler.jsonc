@@ -10,5 +10,11 @@
       "database_name": "quipu-db",
       "database_id": "9d0f287f-523a-47f3-83f1-04d951c6c56d"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "carlos1233"
+    }
   ]
 }

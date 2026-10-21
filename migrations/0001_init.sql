@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS documents (
   size INTEGER NOT NULL DEFAULT 0,
   content_text TEXT,
   storage TEXT NOT NULL DEFAULT 'd1-inline',
+  r2_key TEXT,
+  parse_note TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_documents_candidate ON documents(candidate_id);

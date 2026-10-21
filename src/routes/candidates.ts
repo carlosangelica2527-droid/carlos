@@ -323,11 +323,23 @@ r.get('/candidates/:id/documents/:docId', requireAuth, requirePermission('candid
   const user = c.get('user') as SessionUser
   const id = intOrNull(c.req.param('id'))
   const did = intOrNull(c.req.param('docId'))
-  const doc = await c.env.DB.prepare('SELECT filename, content_text FROM documents WHERE id = ? AND candidate_id = ? AND org_id = ?')
+  const doc = await c.env.DB.prepare('SELECT filename, mime, content_text, r2_key FROM documents WHERE id = ? AND candidate_id = ? AND org_id = ?')
     .bind(did, id, user.org_id).first<any>()
   if (!doc) return jsonError(c, 404, 'Documento no encontrado', 'not_found')
-  await audit(c.env.DB, user, 'document_view', 'candidates', id, { doc: did })
-  return c.json({ filename: doc.filename, text: doc.content_text })
+  await audit(c.env.DB, user, 'document_view', 'candidates', id, { doc: did, via: c.req.query('raw') ? 'archivo' : 'texto' })
+
+  // Descarga del archivo original almacenado en R2 (nunca público: requiere sesión y permiso).
+  if (c.req.query('raw') && doc.r2_key && c.env.R2) {
+    const obj = await c.env.R2.get(doc.r2_key)
+    if (!obj) return jsonError(c, 404, 'El archivo original ya no está disponible', 'not_found')
+    const safe = String(doc.filename || 'documento').replace(/["\\\r\n]/g, '_')
+    c.header('Content-Type', doc.mime || 'application/octet-stream')
+    c.header('Content-Disposition', `attachment; filename="${safe}"`)
+    c.header('Cache-Control', 'no-store')
+    return c.body(obj.body as any)
+  }
+
+  return c.json({ filename: doc.filename, mime: doc.mime, has_file: !!doc.r2_key, text: doc.content_text })
 })
 
 /* ------------------------- CV EXTRACTION ----------------------- */

@@ -58,7 +58,10 @@ ATS (Applicant Tracking System) con **memoria histórica de candidatos**, **comp
 - **Auditoría**: `audit_log` con actor, acción, entidad, resultado y metadatos. Consultable por admin/auditor.
 
 ### Extra
-- **Bolsa de empleo pública** (`/empleos`): vacantes publicadas y postulación con consentimiento explícito.
+- **Bolsa de empleo pública** (`/empleos`): vacantes publicadas y **postulación con carga de CV real** (PDF/DOCX/TXT hasta 3 MB), sin necesidad de cuenta.
+- **Carga de CV del postulante** (`/empleos/<slug>` → `POST /api/public/apply`): el navegador extrae el texto (pdf.js / mammoth), el original se guarda en **R2** y el texto en D1. Las habilidades detectadas entran **sin verificar y sin puntuar**. Verificado en producción: `cv_stored: "r2"`, 552 caracteres, 8 habilidades.
+- **Descarga privada del CV**: `GET /api/candidates/:id/documents/:docId?raw=1` sirve el original desde R2 solo con sesión y permiso `candidates:read`; cada acceso queda auditado. Nunca hay URL pública.
+- **Verificación de hojas de cálculo (.xlsx)** (`src/lib/xlsx.ts`): comprueba existencia de hoja, presencia de fórmula y valores numéricos con tolerancia, devolviendo evidencia por criterio. El resultado **siempre queda en revisión humana**. Verificado: 10/10 en libro correcto.
 - **Auto-inicialización del esquema**: el Worker crea las tablas si la base está vacía y ofrece carga de datos demo o creación de la organización real. No depende de permisos de CLI sobre D1.
 - **Extracción de CV**: heurística local siempre disponible; IA opcional (Workers AI u OpenAI) con degradación explícita y campos dudosos marcados.
 
@@ -183,12 +186,12 @@ Todo lo listado arriba, con las pruebas descritas.
 1. **Envío real de correo**: requiere configurar `RESEND_API_KEY`. Sin ella los envíos quedan como `failed` (comportamiento correcto, no simulado).
 2. **WhatsApp Business**: no implementado. Requiere proveedor oficial, plantillas aprobadas y consentimiento.
 3. **Calendario externo** (Google/Outlook): no implementado. Las entrevistas se agendan dentro de QUIPU.
-4. **Prueba avanzada de Excel (P2)**: se evalúa con revisión manual y rúbrica; **el sistema no ejecuta ni analiza archivos `.xlsx`**. No se afirma esa capacidad.
+4. ~~Prueba avanzada de Excel~~ **RESUELTO**: el sistema lee el `.xlsx` en el navegador (SheetJS) y verifica fórmulas/valores en el servidor con rúbrica estructurada. La calificación final sigue requiriendo revisión humana por diseño.
 5. **Módulo de desempeño laboral (P2)**: existe el registro básico (objetivos, revisiones 30/60/90 días) y **rechaza registrar desempeño de personas no contratadas**.
-6. **Exportación a PDF**: solo CSV.
+6. **Exportación a PDF**: los reportes se exportan en CSV; para PDF se usa la impresión del navegador (CSS de impresión incluido). No hay generación de PDF en el servidor.
 7. **SSO empresarial**: no implementado (P3).
-8. **Token de despliegue**: falta el permiso *D1 Edit*; por eso el esquema se inicializa desde el Worker. Para migrar por CLI hace falta ampliar el token.
-9. **R2**: no se usa todavía (los documentos van a D1). El endpoint indicado (`baf0f69c…`) es en realidad el **Account ID**, no un endpoint S3.
+8. **Token de despliegue**: el token de Pages **no incluye *D1 Edit*** (error `7403` al usar la API de D1). Por eso el esquema y las columnas nuevas se aplican desde el Worker (`ensureSchema` + `applyColumnUpgrades`). No bloquea la operación: el Worker escribe en D1 con el binding. Para migrar por CLI hay que añadir ese permiso al token.
+9. **R2**: ✅ **conectado** al bucket `carlos1233` (binding `R2` en `wrangler.jsonc`). Los CV se guardan como objetos privados. Aclaración: `baf0f69c19cfd415bc0a735b76a9ee0c` es el **Account ID** de Cloudflare, no un endpoint S3.
 
 ### Criterios de aceptación del documento
 | Criterio | Estado |

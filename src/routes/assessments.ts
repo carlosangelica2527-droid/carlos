@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { type Env, type SessionUser, requireAuth, requirePermission } from '../lib/auth'
 import { audit, jsonError, cleanStr, intOrNull, num, parseJson } from '../lib/util'
+import { verifyWorkbook } from '../lib/xlsx'
 
 const r = new Hono<{ Bindings: Env }>()
 
@@ -112,15 +113,53 @@ r.post('/assessments/:id/attempts', requireAuth, requirePermission('assessments:
   let autoScore = 0
   let maxScore = 0
   let hasOpen = false
-  for (const q of questions) {
-    maxScore += q.points
-    const given = answers[String(q.id)] ?? answers[q.id]
-    if (q.kind === 'mcq') {
-      if (Number(given) === q.correct_index) autoScore += q.points
-    } else {
-      hasOpen = true
+  let breakdown: any[] = []
+  let answersPayload: unknown = answers
+
+  if (assessment.type === 'spreadsheet') {
+    // Prueba de hoja de cálculo: se verifica el libro que resuelve la persona.
+    const wb: any = b?.workbook
+    if (!wb || typeof wb !== 'object' || !Object.keys(wb).length) {
+      return jsonError(c, 400, 'Adjunta el archivo .xlsx resuelto para registrar el intento', 'validation')
     }
+    const verdict = verifyWorkbook(
+      wb,
+      questions.map((q: any) => ({ prompt: q.prompt, points: Number(q.points) || 0, rubric: q.rubric }))
+    )
+    autoScore = verdict.autoScore
+    maxScore = verdict.maxScore
+    hasOpen = verdict.requiresReview
+    answersPayload = { workbook: wb }
+    breakdown = verdict.results.map((x) => ({
+      question_id: questions[x.index]?.id ?? null,
+      prompt: x.prompt,
+      kind: 'spreadsheet',
+      points: x.points,
+      awarded: x.awarded,
+      status: x.status,
+      evidence: x.evidence,
+      pending_review: x.status === 'revisar'
+    }))
+  } else {
+    for (const q of questions) {
+      maxScore += q.points
+      const given = answers[String(q.id)] ?? answers[q.id]
+      if (q.kind === 'mcq') {
+        if (Number(given) === q.correct_index) autoScore += q.points
+      } else {
+        hasOpen = true
+      }
+    }
+    breakdown = questions.map((q: any) => ({
+      question_id: q.id,
+      prompt: q.prompt,
+      kind: q.kind,
+      points: q.points,
+      awarded: q.kind === 'mcq' ? (Number(answers[String(q.id)] ?? answers[q.id]) === q.correct_index ? q.points : 0) : null,
+      pending_review: q.kind !== 'mcq'
+    }))
   }
+
   // Las preguntas abiertas no se puntúan automáticamente: quedan para revisión humana.
   const status = hasOpen || assessment.type !== 'mcq' ? 'review_required' : 'graded'
   const finalScore = assessment.type === 'mcq' && !hasOpen ? autoScore : null
@@ -128,7 +167,7 @@ r.post('/assessments/:id/attempts', requireAuth, requirePermission('assessments:
   const res = await c.env.DB.prepare(
     `INSERT INTO attempts (org_id, assessment_id, candidate_id, application_id, answers, auto_score, max_score, final_score, status, assessment_version)
      VALUES (?,?,?,?,?,?,?,?,?,?)`
-  ).bind(user.org_id, id, candidateId, applicationId, JSON.stringify(answers), autoScore, maxScore, finalScore, status, assessment.version).run()
+  ).bind(user.org_id, id, candidateId, applicationId, JSON.stringify(answersPayload), autoScore, maxScore, finalScore, status, assessment.version).run()
 
   await audit(c.env.DB, user, 'attempt_submit', 'attempts', res.meta.last_row_id, {
     assessment_id: id, candidate_id: candidateId, auto_score: autoScore, max_score: maxScore, status
@@ -140,16 +179,9 @@ r.post('/assessments/:id/attempts', requireAuth, requirePermission('assessments:
     max_score: maxScore,
     final_score: finalScore,
     status,
-    breakdown: questions.map((q: any) => ({
-      question_id: q.id,
-      prompt: q.prompt,
-      kind: q.kind,
-      points: q.points,
-      awarded: q.kind === 'mcq' ? (Number(answers[String(q.id)] ?? answers[q.id]) === q.correct_index ? q.points : 0) : null,
-      pending_review: q.kind !== 'mcq'
-    })),
+    breakdown,
     note: status === 'review_required'
-      ? 'Hay preguntas abiertas o evidencia práctica: se requiere calificación humana antes de usar el resultado.'
+      ? 'Hay evidencia que requiere calificación humana antes de usar el resultado. La verificación automática es solo un apoyo.'
       : 'Puntuación automática registrada con la versión de la prueba y las respuestas completas.'
   }, 201)
 })
