@@ -466,9 +466,66 @@
   Q.views.settings = async function () {
     Q.mountShell('settings', Q.loading(), '')
     const u = Q.state.user
-    let users = [], privacy = [], org = Q.state.org || {}
+    let users = [], privacy = [], org = Q.state.org || {}, mail = null
     try { users = await api('/users') } catch (e) { users = [] }
     try { privacy = await api('/privacy/requests') } catch (e) { privacy = [] }
+    try { mail = await api('/settings/email') } catch (e) { mail = null }
+
+    const mailCard = `
+      <section class="card" id="mail-card">
+        <div class="card-head"><h2>Correo saliente</h2>
+          <div class="right">${mail && mail.configured
+            ? '<span class="badge b-green">conectado</span>'
+            : '<span class="badge b-amber">sin configurar</span>'}</div>
+        </div>
+        <div class="card-pad">
+          ${!mail || !mail.configured ? `<div class="notice n-warn" style="margin-bottom:12px"><span>⚠</span><div><b>Aún no puedes enviar correos.</b> Los enlaces a pruebas y los avisos de estado no saldrán hasta conectar un proveedor.</div></div>` : ''}
+          <p class="small muted" style="margin-bottom:12px">Proveedor: <b>Resend</b>. Pasos: 1) crea una cuenta gratuita en resend.com · 2) verifica tu dominio (o usa <code>onboarding@resend.dev</code> para probar) · 3) genera una API Key · 4) pégala aquí y envía una prueba.</p>
+          ${mail && mail.source === 'entorno' ? '<div class="notice n-info" style="margin-bottom:10px"><span>ℹ</span><div>Se está usando la clave del entorno del servidor. Puedes definir una propia de tu empresa aquí.</div></div>' : ''}
+          ${mail && mail.key_hint ? `<p class="tiny muted" style="margin-bottom:10px">Clave actual: <code>${esc(mail.key_hint)}</code></p>` : ''}
+          <div class="field-row">
+            <div class="field"><label for="mfrom">Correo remitente</label><input id="mfrom" placeholder="seleccion@tuempresa.com" value="${esc((mail && mail.from_email) || '')}"></div>
+            <div class="field"><label for="mname">Nombre visible</label><input id="mname" placeholder="Selección de Personal" value="${esc((mail && mail.from_name) || '')}"></div>
+          </div>
+          <div class="field"><label for="mkey">API Key de Resend</label><input id="mkey" type="password" placeholder="re_..." autocomplete="off"><span class="hint">Se guarda en tu organización. Nunca se muestra completa.</span></div>
+          <div class="field"><label for="mreply">Responder a (opcional)</label><input id="mreply" placeholder="rrhh@tuempresa.com" value="${esc((mail && mail.reply_to) || '')}"></div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn" id="msaveMail">Guardar conexión</button>
+            <button class="btn btn-ghost" id="mtestMail">Enviar correo de prueba</button>
+          </div>
+          <div id="mailmsg" style="margin-top:10px"></div>
+        </div>
+      </section>`
+
+    const mailBind = () => {
+      const save = document.getElementById('msaveMail')
+      if (!save) return
+      const msg = document.getElementById('mailmsg')
+      save.onclick = async () => {
+        save.disabled = true; save.textContent = 'Guardando…'
+        try {
+          await api('/settings/email', { method: 'PUT', body: {
+            api_key: document.getElementById('mkey').value.trim(),
+            from_email: document.getElementById('mfrom').value.trim(),
+            from_name: document.getElementById('mname').value.trim(),
+            reply_to: document.getElementById('mreply').value.trim()
+          }})
+          msg.innerHTML = '<div class="notice n-ok"><span>✓</span><div>Correo conectado. Ya puedes enviar enlaces de prueba a los postulantes.</div></div>'
+          document.getElementById('mkey').value = ''
+          setTimeout(() => Q.render(), 900)
+        } catch (e) { msg.innerHTML = '<div class="notice n-err"><span>⚠</span><div>' + esc(e.message) + '</div></div>' }
+        save.disabled = false; save.textContent = 'Guardar conexión'
+      }
+      document.getElementById('mtestMail').onclick = async (ev) => {
+        const b = ev.target
+        b.disabled = true; b.textContent = 'Enviando…'
+        try {
+          const r = await api('/settings/email/test', { method: 'POST', body: { to: u.email } })
+          msg.innerHTML = '<div class="notice n-ok"><span>✓</span><div><b>Correo enviado a ' + esc(r.to) + '.</b> Revisa tu bandeja (y el spam).</div></div>'
+        } catch (e) { msg.innerHTML = '<div class="notice n-err"><span>⚠</span><div>' + esc(e.message) + '</div></div>' }
+        b.disabled = false; b.textContent = 'Enviar correo de prueba'
+      }
+    }
 
     const isAdmin = u.role === 'admin'
     const canAudit = u.role === 'admin' || u.role === 'auditor'
@@ -503,6 +560,8 @@
           </div>
         </section>
       </div>
+
+      ${mailCard}
 
       <section class="card" style="margin-top:16px">
         <div class="card-head"><h2>Usuarios (${users.length})</h2><div class="right">${isAdmin ? '<button class="btn btn-sm" id="newUser">Nuevo usuario</button>' : ''}</div></div>
@@ -547,6 +606,7 @@
       </section>`
 
     Q.mountShell('settings', html, '', 'Configuración')
+    mailBind()
 
     const of = document.getElementById('orgform')
     if (of) of.onsubmit = async (e) => {

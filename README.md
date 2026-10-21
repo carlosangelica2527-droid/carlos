@@ -65,6 +65,22 @@ ATS (Applicant Tracking System) con **memoria histórica de candidatos**, **comp
 - **Auto-inicialización del esquema**: el Worker crea las tablas si la base está vacía y ofrece carga de datos demo o creación de la organización real. No depende de permisos de CLI sobre D1.
 - **Extracción de CV**: heurística local siempre disponible; IA opcional (Workers AI u OpenAI) con degradación explícita y campos dudosos marcados.
 
+### Portal del postulante (nuevo)
+- **Enlace personal sin contraseña**: cada postulación genera un `public_token` aleatorio (128 bits). El postulante entra a `/mi-postulacion/<token>` y ve el estado real de su proceso. Token inválido ⇒ **404** (no filtra nada).
+- **Autogestión de datos**: el postulante edita teléfono, ubicación, titular, años de experiencia y **pretensión salarial** (`candidates.salary_expectation`). Antes ese dato no tenía dónde registrarse.
+- **Progreso visible**: barra de 4 pasos (Recibida → En revisión → Pruebas → Resultado) y etapa actual del pipeline.
+- **Pruebas desde el propio portal**: ve las pruebas asignadas y las responde — opción múltiple, respuesta abierta o **subida del `.xlsx` resuelto** (drag & drop, verificado en servidor). Al enviar, la prueba pasa a *completada* y el intento queda registrado.
+- **Ya no "muere" al postularse**: el portal es la continuación del proceso, no un callejón sin salida.
+
+### Asignación de pruebas y visor de respuestas (nuevo)
+- **Asignación por postulación** (`test_assignments`): desde el pipeline, botón *Asignar prueba* → catálogo, fecha límite opcional y envío del enlace por correo. Devuelve el `portal_link` listo para copiar.
+- **Visor de respuestas** (`GET /api/attempts/:id/detail`): pregunta por pregunta con la respuesta dada, la etiqueta elegida, cuál era la correcta, la rúbrica en pruebas abiertas y el libro entregado con su verificación en Excel.
+- **Motor de puntuación unificado** (`src/lib/score.ts`): el mismo cálculo se usa en el portal y en la vista del reclutador, así nunca discrepan. MCQ autocalifica; abiertas y Excel quedan en `review_required` por diseño.
+
+### Correo saliente configurable (nuevo)
+- **Configuración → Correo saliente**: conecta Resend con API Key, remitente y reply-to. La clave se guarda en `organizations.settings.email` (por organización) y **nunca se muestra completa** (solo un hint).
+- **Botón "Enviar prueba"**: hace un envío real. Si no hay clave, el sistema declara `configured: false` con los pasos — no simula envíos.
+
 ---
 
 ## Verificación ejecutada
@@ -88,6 +104,13 @@ Cubren: normalización, familias de habilidades, no inventar ceros, excluyentes,
 | Talent Memory por habilidad, reportes, exportación CSV | ✅ |
 | Bolsa pública + página `/empleos` | ✅ |
 | Aislamiento multiempresa | ✅ |
+| **Portal**: token válido 200 / token inválido 404 / página `/mi-postulacion/:token` 200 | ✅ |
+| **Asignar prueba** a postulación 12 → devuelve `portal_link` y marca *pendiente* | ✅ |
+| **Postulante envía prueba abierta** → `attempt_id: 4`, `status: review_required`, prueba pasa a *completada* | ✅ |
+| **Reclutador ve las respuestas** (`/api/attempts/4/detail`): pregunta, respuesta y rúbrica | ✅ |
+| **Pretensión salarial desde el portal**: guarda `salary: 1850`, teléfono y ubicación | ✅ |
+| **Correo saliente**: sin clave responde `configured: false` con los pasos (no simula) | ✅ |
+| Rutas nuevas sin sesión devuelven 401 (`/settings/email`, asignar prueba, ver respuestas) | ✅ |
 
 ---
 
@@ -183,7 +206,7 @@ npx wrangler pages secret put RESEND_API_KEY --project-name quipu-ats
 Todo lo listado arriba, con las pruebas descritas.
 
 ### Pendiente / limitaciones conocidas — declaradas explícitamente
-1. **Envío real de correo**: requiere configurar `RESEND_API_KEY`. Sin ella los envíos quedan como `failed` (comportamiento correcto, no simulado).
+1. **Envío real de correo**: la interfaz de conexión ya existe (**Configuración → Correo saliente**, proveedor Resend). Falta que el usuario pegue su API Key; hasta entonces el sistema declara `configured: false` y **no simula envíos**. También se acepta `RESEND_API_KEY` como secreto del proyecto.
 2. **WhatsApp Business**: no implementado. Requiere proveedor oficial, plantillas aprobadas y consentimiento.
 3. **Calendario externo** (Google/Outlook): no implementado. Las entrevistas se agendan dentro de QUIPU.
 4. ~~Prueba avanzada de Excel~~ **RESUELTO**: el sistema lee el `.xlsx` en el navegador (SheetJS) y verifica fórmulas/valores en el servidor con rúbrica estructurada. La calificación final sigue requiriendo revisión humana por diseño.

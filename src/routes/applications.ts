@@ -97,16 +97,17 @@ r.post('/applications', requireAuth, requirePermission('applications:write'), as
   if (!stages.length) return jsonError(c, 500, 'La vacante no tiene etapas configuradas', 'config')
   const first = stages[0]
 
+  const token = crypto.randomUUID().replace(/-/g, '')
   const res = await c.env.DB.prepare(
-    'INSERT INTO applications (org_id, job_id, candidate_id, stage_id, status, source, owner_id) VALUES (?,?,?,?,?,?,?)'
-  ).bind(user.org_id, jobId, candidateId, first.id, 'active', cleanStr(b?.source, 80) || 'postulacion', user.id).run()
+    'INSERT INTO applications (org_id, job_id, candidate_id, stage_id, status, source, owner_id, public_token) VALUES (?,?,?,?,?,?,?,?)'
+  ).bind(user.org_id, jobId, candidateId, first.id, 'active', cleanStr(b?.source, 80) || 'postulacion', user.id, token).run()
   const appId = Number(res.meta.last_row_id)
 
   await c.env.DB.prepare('INSERT INTO application_events (org_id, application_id, to_stage, action, actor_id, note) VALUES (?,?,?,?,?,?)')
     .bind(user.org_id, appId, first.name, 'created', user.id, cleanStr(b?.note, 500) || null).run()
   await audit(c.env.DB, user, 'application_create', 'applications', appId, { job_id: jobId, candidate_id: candidateId })
 
-  return c.json({ id: appId, candidate_id: candidateId, stage: first.name }, 201)
+  return c.json({ id: appId, candidate_id: candidateId, stage: first.name, portal_url: `/mi-postulacion/${token}` }, 201)
 })
 
 /* ---------------------------- DETAIL --------------------------- */

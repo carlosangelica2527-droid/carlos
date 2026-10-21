@@ -11,7 +11,10 @@ import intelligenceRoutes from './routes/intelligence'
 import assessmentRoutes from './routes/assessments'
 import reportRoutes from './routes/reports'
 import publicApplyRoutes from './routes/public'
-import { publicJobsPage, publicJobPage, appShell } from './pages'
+import portalRoutes from './routes/portal'
+import testRoutes from './routes/tests'
+import mailRoutes from './routes/mailcfg'
+import { publicJobsPage, publicJobPage, appShell, portalPage } from './pages'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -93,6 +96,9 @@ app.post('/api/setup/bootstrap', async (c) => {
 
 app.route('/api', publicRouter)
 app.route('/api', publicApplyRoutes)
+app.route('/api', portalRoutes)
+app.route('/api', testRoutes)
+app.route('/api', mailRoutes)
 app.route('/api', authRoutes)
 app.route('/api', jobRoutes)
 app.route('/api', candidateRoutes)
@@ -121,5 +127,6 @@ app.onError((err, c) => {
 // Página pública de empleos
 app.get('/empleos', (c) => c.html(publicJobsPage()))
 app.get('/empleos/:slug', (c) => c.html(publicJobPage(c.req.param('slug'))))
+app.get('/mi-postulacion/:token', (c) => c.html(portalPage(c.req.param('token'))))
 
 export default app

@@ -10,10 +10,41 @@ let schemaReady = false
  * (por ejemplo en producción) se actualiza sin CLI ni migraciones manuales.
  */
 const COLUMN_UPGRADES: { table: string; column: string; ddl: string }[] = [
+  { table: 'applications', column: 'public_token', ddl: 'ALTER TABLE applications ADD COLUMN public_token TEXT' },
   { table: 'documents', column: 'r2_key', ddl: 'ALTER TABLE documents ADD COLUMN r2_key TEXT' },
   { table: 'documents', column: 'parse_note', ddl: 'ALTER TABLE documents ADD COLUMN parse_note TEXT' },
   { table: 'assessments', column: 'workbook_ref', ddl: 'ALTER TABLE assessments ADD COLUMN workbook_ref TEXT' }
 ]
+
+/** Tablas creadas después del esquema inicial (idempotente en cada arranque). */
+const ALWAYS_TABLES: string[] = [
+  `CREATE TABLE IF NOT EXISTS test_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL,
+    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    assessment_id INTEGER NOT NULL REFERENCES assessments(id),
+    status TEXT NOT NULL DEFAULT 'assigned',
+    due_at TEXT,
+    assigned_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (application_id, assessment_id)
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_tassign_app ON test_assignments(application_id)',
+  'CREATE INDEX IF NOT EXISTS idx_apps_token ON applications(public_token)'
+]
+
+async function ensureTables(env: Env): Promise<void> {
+  for (const sql of ALWAYS_TABLES) {
+    try { await env.DB.prepare(sql).run() } catch (e) { /* ya existe */ }
+  }
+  // Postulaciones creadas antes de existir el portal: se les asigna token
+  // para que el postulante pueda entrar a su enlace de seguimiento.
+  try {
+    await env.DB.prepare(
+      "UPDATE applications SET public_token = hex(randomblob(16)) WHERE public_token IS NULL OR public_token = ''"
+    ).run()
+  } catch (e) { /* columna aún no disponible */ }
+}
 
 async function applyColumnUpgrades(env: Env): Promise<void> {
   for (const up of COLUMN_UPGRADES) {
@@ -42,6 +73,7 @@ export async function ensureSchema(env: Env): Promise<void> {
   if (!row) {
     await env.DB.batch(SCHEMA_STATEMENTS.map((sql) => env.DB.prepare(sql)))
   }
+  await ensureTables(env)
   await applyColumnUpgrades(env)
   schemaReady = true
 }

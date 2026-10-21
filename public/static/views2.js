@@ -695,9 +695,11 @@
           </section>
 
           <section class="card">
-            <div class="card-head"><h2>Pruebas aplicadas</h2><div class="right"><button class="btn btn-ghost btn-sm" id="addAttempt">Registrar intento</button></div></div>
+            <div class="card-head"><h2>Pruebas del proceso</h2><div class="right"><button class="btn btn-sm" id="assignTest">Asignar prueba</button><button class="btn btn-ghost btn-sm" id="addAttempt">Registrar intento</button></div></div>
             <div class="card-pad">
+              <div id="assignList" style="margin-bottom:12px"></div>
               ${a.attempts.length ? a.attempts.map((t) => `<div class="crit"><div class="crit-head"><b>${esc(t.assessment_title)}</b>${H.statusBadge(t.status)}
+                <span class="spacer"></span><button class="btn btn-ghost btn-sm" data-answers="${t.id}">Ver respuestas</button>
                 <span class="small">${(t.final_score ?? t.auto_score) ?? '—'}/${t.max_score || 100}</span>
                 ${t.status === 'review_required' ? `<span class="spacer"></span><button class="btn btn-ghost btn-sm" data-grade="${t.id}" data-max="${t.max_score || 100}">Calificar</button>` : ''}</div>
                 <div class="tiny muted">v${t.assessment_version} · ${esc(H.fmtDate(t.submitted_at, true))}${t.reviewer_note ? ' · ' + esc(t.reviewer_note) : ''}</div></div>`).join('')
@@ -732,6 +734,108 @@
       </div>`
 
     Q.mountShell('applications', html, `<a class="btn btn-ghost" href="#/vacantes/${a.job_id}">Ir a la vacante</a>`, a.job_title)
+
+    async function loadAssignments() {
+      const box = document.getElementById('assignList')
+      if (!box) return
+      let rows = []
+      try { rows = await api('/applications/' + id + '/tests') } catch (e) { rows = [] }
+      box.innerHTML = rows.length
+        ? `<div class="small muted" style="margin-bottom:6px">Pruebas asignadas al postulante</div>` + rows.map((t) => `
+            <div class="row small" style="padding:6px 0;border-bottom:1px solid #f1f5f9;gap:8px">
+              <span style="flex:1"><b>${esc(t.title)}</b> <span class="tiny muted">${esc(t.type)}</span></span>
+              ${t.attempts > 0 ? '<span class="badge b-green">respondida</span>' : '<span class="badge b-amber">pendiente</span>'}
+              ${t.due_at ? `<span class="tiny muted">antes del ${esc(String(t.due_at).slice(0, 10))}</span>` : ''}
+              <button class="btn-flat tiny" data-unassign="${t.id}">Quitar</button>
+            </div>`).join('')
+        : '<p class="small muted">Aún no hay pruebas asignadas. Asigna una para que el postulante pueda realizarla desde su enlace.</p>'
+      box.querySelectorAll('[data-unassign]').forEach((b) => {
+        b.onclick = async () => {
+          if (!(await Q.confirm('Quitar prueba', 'El postulante dejará de verla en su portal.', 'Quitar'))) return
+          try { await api('/applications/' + id + '/tests/' + b.dataset.unassign, { method: 'DELETE' }); Q.toast('Prueba quitada', 'ok'); loadAssignments() }
+          catch (e) { Q.toast(e.message, 'err') }
+        }
+      })
+    }
+
+    const atBtn = document.getElementById('assignTest')
+    if (atBtn) atBtn.onclick = async () => {
+      let list = []
+      try { list = await api('/assessments') } catch (e) { list = [] }
+      const usable = list.filter((x) => x.question_count > 0)
+      if (!usable.length) { Q.toast('Primero crea una prueba con preguntas en Skill Lab', 'err'); return }
+      Q.modal({
+        title: 'Asignar prueba al postulante',
+        body: `<p class="small muted" style="margin-bottom:12px">El postulante verá la prueba en su enlace personal y podrá realizarla sin contraseña.</p>
+          <div class="field"><label for="asel2">Prueba</label><select id="asel2">${usable.map((x) => `<option value="${x.id}">${esc(x.title)} · ${x.type} · ${x.question_count} preguntas</option>`).join('')}</select></div>
+          <div class="field"><label for="adue">Fecha límite (opcional)</label><input id="adue" type="date"></div>
+          <label style="display:flex;gap:8px;align-items:center;font-weight:400;font-size:13px;margin-top:12px"><input type="checkbox" id="asend" style="width:auto" checked> Enviar el enlace por correo al postulante</label>
+          <div id="amsg" style="margin-top:10px"></div>`,
+        footer: `<button class="btn btn-ghost" id="mcancel">Cancelar</button><button class="btn" id="massign">Asignar</button>`,
+        onMount: () => {
+          document.getElementById('massign').onclick = async () => {
+            const btn = document.getElementById('massign')
+            btn.disabled = true; btn.textContent = 'Asignando…'
+            const out = document.getElementById('amsg')
+            try {
+              const r = await api('/applications/' + id + '/tests', {
+                method: 'POST',
+                body: {
+                  assessment_id: Number(document.getElementById('asel2').value),
+                  due_at: document.getElementById('adue').value || null,
+                  send_email: document.getElementById('asend').checked
+                }
+              })
+              let extra = ''
+              if (r.email) extra = r.email.sent ? '<br><b>Correo enviado.</b>' : `<br><span class="muted">No se envió correo: ${esc(r.email.reason || '')}</span>`
+              out.innerHTML = `<div class="notice n-ok"><span>✓</span><div><b>Prueba asignada.</b>${extra}<br><span class="tiny">Enlace del postulante: <code>${esc(r.portal_link)}</code></span><div style="margin-top:7px"><button class="btn btn-ghost btn-sm" id="cpLink">Copiar enlace</button></div></div></div>`
+              document.getElementById('cpLink').onclick = () => {
+                navigator.clipboard.writeText(location.origin + r.portal_link).then(() => Q.toast('Enlace copiado', 'ok')).catch(() => {})
+              }
+              loadAssignments()
+            } catch (e) {
+              out.innerHTML = `<div class="notice n-err"><span>⚠</span><div>${esc(e.message)}</div></div>`
+            }
+            btn.disabled = false; btn.textContent = 'Asignar'
+          }
+        }
+      })
+    }
+
+    document.querySelectorAll('[data-answers]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const d = await api('/attempts/' + b.dataset.answers + '/detail')
+          let inner = ''
+          if (d.type === 'spreadsheet') {
+            const sheets = Object.keys(d.workbook || {})
+            inner = `<div class="notice n-info" style="margin-bottom:10px"><span>ℹ</span><div>Verificación automática del libro. La decisión final es tuya.</div></div>
+              <p class="small"><b>Hojas entregadas:</b> ${esc(sheets.join(', ') || 'ninguna')}</p>
+              <p class="small muted" style="margin-top:6px">Criterios evaluados por el sistema:</p>
+              ${d.items.map((x) => `<div class="crit"><div class="crit-ev">${esc(x.prompt)}</div><div class="tiny muted">Criterio: <code>${esc(x.rubric || '—')}</code></div></div>`).join('')}
+              <p class="small" style="margin-top:10px"><b>Puntaje automático:</b> ${d.auto_score ?? '—'} / ${d.max_score ?? '—'}</p>`
+          } else {
+            inner = d.items.map((x) => `<div class="crit">
+              <div class="crit-head"><b class="small">${esc(x.prompt)}</b>
+                <span class="badge b-gray">${x.points} pts</span>
+                ${x.is_correct === true ? '<span class="badge b-green">correcta</span>' : x.is_correct === false ? '<span class="badge b-red">incorrecta</span>' : '<span class="badge b-amber">abierta</span>'}
+              </div>
+              <div class="crit-ev"><b>Respuesta:</b> ${esc(x.answer_label || x.answer_text || '(sin responder)')}</div>
+              ${x.correct_label ? `<div class="crit-ev" style="color:#067647"><b>Correcta:</b> ${esc(x.correct_label)}</div>` : ''}
+            </div>`).join('') +
+            `<p class="small" style="margin-top:10px"><b>Automático:</b> ${d.auto_score ?? '—'} / ${d.max_score ?? '—'} · <b>Final:</b> ${d.final_score ?? 'pendiente'}</p>`
+          }
+          Q.modal({
+            title: `${d.candidate} · ${d.title}`,
+            wide: true,
+            body: `<div class="row small muted" style="margin-bottom:12px"><span>${esc(d.type)}</span><span class="spacer"></span><span>${esc(H.fmtDate(d.submitted_at, true))}</span></div>${inner}`,
+            footer: `<button class="btn btn-ghost" id="mcancel">Cerrar</button>`
+          })
+        } catch (e) { Q.toast(e.message, 'err') }
+      }
+    })
+
+    loadAssignments()
 
     document.getElementById('moveBtn').onclick = async () => {
       const stageId = Number(document.getElementById('stageSel').value)

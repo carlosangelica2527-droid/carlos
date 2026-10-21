@@ -188,3 +188,87 @@ anteriores, aunque hoy no estén postulando.
 | "Ya registramos una postulación tuya" | Es el perfil único evitando duplicados. Es correcto. |
 | Un usuario no ve datos | Está en otra organización. El aislamiento es intencional. |
 | Los correos no salen | Falta configurar `RESEND_API_KEY` (ver README). |
+
+---
+
+## 10. El portal del postulante (lo que faltaba explicar)
+
+Cuando una persona se postula, el sistema **no la deja "morir" ahí**. Al enviar la postulación se genera un enlace personal y privado.
+
+### 10.1 Qué recibe el postulante
+
+Un enlace del tipo:
+
+```
+https://quipu-ats.pages.dev/mi-postulacion/<token-de-32-caracteres>
+```
+
+Ese enlace es su **credencial**: no necesita contraseña. Es único, aleatorio y no se puede adivinar. El postulante lo ve al final de su postulación y el reclutador puede copiarlo desde el pipeline.
+
+### 10.2 Qué puede hacer el postulante en su portal
+
+| Sección | Qué hace |
+|---|---|
+| **Progreso** | Barra de 4 pasos: Recibida → En revisión → Pruebas → Resultado |
+| **Estado** | Ve en qué etapa está su postulación y el nombre de la vacante |
+| **Mis datos** | Edita teléfono, ubicación, titular profesional, años de experiencia y **pretensión salarial** |
+| **Pruebas** | Ve las pruebas que le asignaron y las responde **desde el mismo portal** |
+| **Resultados** | Ve qué pruebas ya entregó y en qué estado están |
+
+### 10.3 ¿Dónde dice el postulante su salario deseado?
+
+En el portal, sección **"Mis datos"**, campo **Pretensión salarial (USD)**.
+
+- Se guarda en el perfil único del candidato (`candidates.salary_expectation`).
+- Es **editable en cualquier momento**: si cambia de expectativa, la actualiza y el reclutador ve el valor nuevo.
+- El reclutador lo ve en la ficha del candidato y en el detalle de la postulación.
+- Si el campo se deja vacío, se guarda como "sin dato" — nunca se inventa un número.
+
+### 10.4 ¿Cómo hace una prueba el postulante?
+
+Este era el hueco real. El flujo completo es de **dos lados**:
+
+**Lado reclutador (una vez por vacante):**
+
+1. Abre la postulación en el pipeline (`#/postulacion/:id`).
+2. En el bloque **"Pruebas del proceso"** pulsa **"Asignar prueba"**.
+3. Elige la prueba del catálogo (las pruebas pueden estar ligadas a una vacante concreta), define fecha límite opcional, y marca si quiere **enviar el enlace por correo**.
+4. El sistema devuelve el **enlace del portal** y lo puedes copiar para enviarlo por WhatsApp, correo o el canal que uses.
+
+**Lado postulante:**
+
+1. Abre su enlace `/mi-postulacion/<token>`.
+2. En **Pruebas** ve la prueba asignada con su instrucción y duración.
+3. Pulsa **"Realizar prueba"**:
+   - **Opción múltiple:** marca la alternativa correcta.
+   - **Respuesta abierta:** escribe en el cuadro de texto.
+   - **Excel (.xlsx):** descarga la plantilla, la resuelve en Excel, y **arrastra el archivo resuelto** al portal. El servidor lee el libro y verifica fórmulas, valores y sumas por rango.
+4. Pulsa **"Enviar"**. El intento queda registrado y la prueba pasa a **completada**.
+
+**Lado reclutador (revisión):**
+
+1. Vuelve a la postulación: la prueba aparece como **respondida**.
+2. En la lista de intentos, cada uno tiene el botón **"Ver respuestas"**.
+3. Se abre el detalle: pregunta por pregunta, la respuesta dada, cuál era la correcta (si aplica) y la rúbrica (si es abierta o Excel).
+4. En pruebas Excel se muestra además el libro entregado y el resultado de cada verificación.
+5. La calificación final de pruebas abiertas y Excel **siempre requiere confirmación humana** — el sistema no decide solo.
+
+### 10.5 Reglas del portal
+
+- El enlace es **personal**. Si se comparte, otra persona puede ver y editar esos datos.
+- Un enlace inválido o inexistente devuelve **404** — no revela nada.
+- El postulante **no puede** ver las pruebas de otras personas ni las respuestas correctas antes de enviar.
+- El postulante **no puede** auto-asignarse pruebas: solo el equipo de selección asigna.
+- Toda acción queda en la bitácora de auditoría de la organización.
+
+### 10.6 Conectar el correo saliente
+
+En **Configuración → Correo saliente**:
+
+1. Crea una cuenta gratuita en `resend.com`.
+2. Verifica un dominio propio (o usa `onboarding@resend.dev` solo para pruebas).
+3. Genera una **API Key** y pégala en el campo correspondiente.
+4. Define el correo remitente y pulsa **"Guardar"**.
+5. Pulsa **"Enviar prueba"**: si llega el correo, la conexión está lista.
+
+Sin este paso, la plataforma **no envía correos** y lo indica como "no configurado" — no simula envíos.

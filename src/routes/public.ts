@@ -96,9 +96,10 @@ pub.post('/public/apply', async (c) => {
     )
   }
 
+  const publicToken = crypto.randomUUID().replace(/-/g, '')
   const appRes = await db
-    .prepare("INSERT INTO applications (org_id, job_id, candidate_id, stage_id, status, source) VALUES (?,?,?,?,'active','pagina_publica')")
-    .bind(job.org_id, job.id, candidateId, stage.id)
+    .prepare("INSERT INTO applications (org_id, job_id, candidate_id, stage_id, status, source, public_token) VALUES (?,?,?,?,'active','pagina_publica',?)")
+    .bind(job.org_id, job.id, candidateId, stage.id, publicToken)
     .run()
   const applicationId = Number(appRes.meta.last_row_id)
 
@@ -184,7 +185,9 @@ pub.post('/public/apply', async (c) => {
       cv_stored: r2Key ? 'r2' : 'd1-texto',
       cv_chars: cvText.length,
       skills_detected: skillsFound,
-      stage: stage.name
+      stage: stage.name,
+      portal_token: publicToken,
+      portal_url: `/mi-postulacion/${publicToken}`
     },
     201
   )
